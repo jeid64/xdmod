@@ -1,0 +1,494 @@
+#!/usr/bin/env php
+<?php
+
+require_once __DIR__ . '/../configuration/linker.php';
+
+use CCR\DB;
+use CCR\Log;
+use Xdmod\Config;
+
+// Disable memory limit.
+ini_set('memory_limit', -1);
+
+try {
+   main();
+} catch (Exception $e) {
+   $logger->crit(array(
+      'message'    => $e->getMessage(),
+      'stacktrace' => $e->getTraceAsString(),
+   ));
+   exit(1);
+}
+
+function main()
+{
+   global $logger, $db;
+
+   $opts = array(
+      array('h',  'help'),
+      array('v',  'verbose'),
+      array('',   'debug'),
+      array('q',  'quiet'),
+      array('i:', 'input:'),
+      array('t:', 'type:'),
+   );
+
+   $shortOptions = implode(
+      '',
+      array_map(function ($opt) { return $opt[0]; }, $opts)
+   );
+   $longOptions = array_map(function ($opt) { return $opt[1]; }, $opts);
+
+   $args = getopt($shortOptions, $longOptions);
+
+   if ($args === false) {
+      fwrite(STDERR, "Failed to parse arguments\n");
+      exit(1);
+   }
+
+   $help = false;
+
+   $type = $input = null;
+
+   $logLevel = -1;
+
+   foreach ($args as $key => $value) {
+      if (is_array($value)) {
+         fwrite(STDERR, "Multiple values not allowed for '$key'\n");
+         exit(1);
+      }
+
+      switch ($key) {
+         case 'h':
+         case 'help':
+            $help = true;
+            break;
+         case 'q':
+         case 'quiet':
+            $logLevel = max($logLevel, Log::WARNING);
+            break;
+         case 'v':
+         case 'verbose':
+            $logLevel = max($logLevel, Log::INFO);
+            break;
+         case 'debug':
+            $logLevel = max($logLevel, Log::DEBUG);
+            break;
+         case 'i':
+         case 'input':
+            $input = $value;
+            break;
+         case 't':
+         case 'type':
+            $type = $value;
+            break;
+         default:
+            fwrite(STDERR, "Unexpected option '$key'\n");
+            exit(1);
+            break;
+      }
+   }
+
+   if ($logLevel === -1) { $logLevel = Log::NOTICE; }
+
+   if ($help) {
+      displayHelpText();
+      exit;
+   }
+
+   $conf = array(
+      'file'            => false,
+      'mail'            => false,
+      'consoleLogLevel' => $logLevel,
+   );
+
+   $logger = Log::factory('xdmod-import-csv', $conf);
+
+    // NOTE: "process_start_time" is needed for the log summary.
+    $logger->notice(array(
+        'message'            => 'xdmod-import-csv start',
+        'process_start_time' => date('Y-m-d H:i:s'),
+    ));
+
+   $logger->debug('Checking for required arguments');
+
+   if ($input === null) {
+      $logger->crit('No input file specified.');
+      exit(1);
+   } elseif (!is_file($input)) {
+      $logger->crit("'$input' is not a file.");
+      exit(1);
+   } elseif (!is_readable($input)) {
+      $logger->crit("'$input' is not readable.");
+      exit(1);
+   }
+
+   if ($type === null) {
+      $logger->crit('No input type specified.');
+      exit(1);
+   }
+
+   try {
+      $logger->debug('Creating database connection');
+      $db = DB::factory('hpcdb');
+   } catch (Exception $e) {
+      $msg = 'Failed to create database connection: ' . $e->getMessage();
+      $logger->crit(array(
+         'message'   => $msg,
+         'stacktrace' => $e->getTraceAsString(),
+      ));
+      exit(1);
+   }
+
+   $data = array();
+
+   $fh = fopen($input, 'r');
+
+   if ($fh === false) {
+      $logger->crit("Failed to open file '$input'.");
+      exit(1);
+   }
+
+   while ($row = fgetcsv($fh)) {
+
+      // Skip blank lines.
+      if (count($row) == 1 && $row[0] === null) {
+         continue;
+      }
+
+      $data[] = $row;
+   }
+
+   $logger->info("Importing type '$type'");
+
+   switch ($type) {
+      case 'names':
+         updatePeople($data);
+         break;
+      case 'hierarchy':
+         updateHierarchy($data);
+         break;
+      case 'group-to-hierarchy':
+         updateGroupToHierarchy($data);
+         break;
+      default:
+         $logger->crit("Unknown type '$type'");
+         exit(1);
+         break;
+   }
+
+    // NOTE: "process_end_time" is needed for the log summary.
+    $logger->notice(array(
+        'message'          => 'xdmod-import-csv end',
+        'process_end_time' => date('Y-m-d H:i:s'),
+    ));
+
+   exit;
+}
+
+/**
+ * @param array $people Array of arrays with:
+ *    - username
+ *    - first name
+ *    - last name
+ */
+function updatePeople(array $people)
+{
+   global $db, $logger;
+
+   $sql = "SELECT person_id, username FROM hpcdb_system_accounts";
+   $users = $db->query($sql);
+
+   $personIdForUsername = array();
+
+   foreach ($users as $user) {
+      $personIdForUsername[$user['username']] = $user['person_id'];
+   }
+
+   foreach ($people as $person) {
+      $fieldCount = count($person);
+      if ($fieldCount != 3) {
+         $msg = "Unexpected number of fields ($fieldCount) in row: "
+            . implode(',', $person);
+         $logger->warning($msg);
+         continue;
+      }
+
+      list($username, $firstName, $lastName) = $person;
+
+      if (!isset($personIdForUsername[$username])) {
+         $logger->warning("Unknown username '$username'");
+         continue;
+      }
+
+      updatePerson($personIdForUsername[$username], $firstName, $lastName);
+   }
+}
+
+function updatePerson($personId, $firstName, $lastName)
+{
+   global $db;
+
+   $sql = "
+      UPDATE hpcdb_people SET
+         first_name = :first_name,
+         last_name = :last_name
+      WHERE person_id = :person_id
+   ";
+
+   return $db->execute(
+      $sql,
+      array(
+         'first_name' => $firstName,
+         'last_name'  => $lastName,
+         'person_id'  => $personId,
+      )
+   );
+}
+
+function updatePersonHierarchyItem($personId, $hierarchyId)
+{
+   global $db;
+
+   $sql = "
+      UPDATE hpcdb_requests r
+      JOIN hpcdb_principal_investigators pi
+         ON r.request_id = pi.request_id
+      SET primary_fos_id = :primary_fos_id
+      WHERE person_id = :person_id
+   ";
+
+   return $db->execute($sql, array(
+      'person_id'      => $personId,
+      'primary_fos_id' => $hierarchyId,
+   ));
+}
+
+function getPersonId($username)
+{
+   global $db;
+
+   $sql = "
+      SELECT person_id
+      FROM hpcdb_system_accounts
+      WHERE username = :username
+   ";
+
+   $rows = $db->query($sql, array('username' => $username));
+
+   if (count($rows) == 0) {
+      return null;
+   } else {
+      return $rows[0]['person_id'];
+   }
+}
+
+/**
+ * @param array $hierarchy Array of hierarchy items with:
+ *    - abbreviation
+ *    - description
+ *    - parent abbreviation
+ */
+function updateHierarchy($hierarchy)
+{
+   foreach ($hierarchy as $item) {
+      $abbrev = $item[0];
+
+      if (isset($item[1])) {
+         $desc = $item[1];
+      } else {
+         $desc = null;
+      }
+
+      if (isset($item[2]) && $item[2] != '') {
+         $parent = $item[2];
+      } else {
+         $parent = null;
+      }
+
+      $id = getHierarchyItemId($abbrev);
+
+      if ($id === null) {
+         createHierarchyItem($abbrev, $desc, $parent);
+      } else {
+         updateHierarchyItem($id, $abbrev, $desc, $parent);
+      }
+   }
+}
+
+function createHierarchyItem($abbrev, $desc = null, $parent = null)
+{
+   global $db, $logger;
+
+   $params = array('abbrev' => $abbrev);
+
+   if ($desc !== null) {
+      $params['description'] = $desc;
+   }
+
+   if ($parent !== null) {
+      $parentId = getHierarchyItemId($parent);
+
+      if ($parentId === null) {
+         $parentId = createHierarchyItem($parent);
+      }
+
+      $params['parent_id'] = $parentId;
+   }
+
+   $sql = "INSERT INTO hpcdb_fields_of_science ("
+      . implode(', ', array_keys($params))
+      . ") VALUES ("
+      . implode(
+         ', ',
+         array_map(function ($key) { return ":$key"; }, array_keys($params))
+      )
+      . ")";
+
+   return $db->insert($sql, $params);
+}
+
+function updateHierarchyItem(
+   $hierarchyId,
+   $abbrev,
+   $desc = null,
+   $parent = null
+) {
+   global $db, $logger;
+
+   $params = array('abbrev' => $abbrev);
+
+   if ($desc !== null) {
+      $params['description'] = $desc;
+   }
+
+   if ($parent !== null) {
+      $parentId = getHierarchyItemId($parent);
+
+      if ($parentId === null) {
+         $parentId = createHierarchyItem($parent);
+      }
+
+      $params['parent_id'] = $parentId;
+   }
+
+   $sql = "UPDATE hpcdb_fields_of_science SET "
+      . implode(
+         ', ',
+         array_map(
+            function ($key) {
+               return "$key = :$key";
+            },
+            array_keys($params)
+         )
+      )
+      . " WHERE field_of_science_id = :id";
+
+   $params['id'] = $hierarchyId;
+
+   return $db->execute($sql, $params);
+}
+
+function getHierarchyItemId($abbrev)
+{
+   global $db;
+
+   $sql = "
+      SELECT field_of_science_id
+      FROM hpcdb_fields_of_science
+      WHERE abbrev = :abbrev
+   ";
+
+   $rows = $db->query($sql, array('abbrev' => $abbrev));
+
+   if (count($rows) == 0) {
+      return null;
+   } else {
+      return $rows[0]['field_of_science_id'];
+   }
+}
+
+function updateGroupToHierarchy($mappings)
+{
+   global $logger;
+
+   foreach ($mappings as $mapping) {
+      $fieldCount = count($mapping);
+      if ($fieldCount != 2) {
+         $msg = "Unexpected number of fields ($fieldCount) in row: "
+            . implode(',', $mapping);
+         $logger->warning($msg);
+         continue;
+      }
+
+      list($groupname, $hierarchyAbbrev) = $mapping;
+
+      $personId    = getPersonId($groupname);
+      $hierarchyId = getHierarchyItemId($hierarchyAbbrev);
+
+      if ($personId === null) {
+         $logger->warning("Skipping unknown groupname '$groupname'");
+         continue;
+      }
+
+      if ($hierarchyId === null) {
+         $msg = "Skipping unknown hierarchy item '$hierarchyAbbrev'";
+         $logger->warning($msg);
+         continue;
+      }
+
+      updatePersonHierarchyItem($personId, $hierarchyId);
+   }
+}
+
+function displayHelpText()
+{
+   echo <<<'EOF'
+
+Usage: xdmod-import-csv -t *type* -i *input-file.csv*
+
+   -h, --help
+      Display this message and exit.
+
+   -v, --verbose
+      Output info level logging.
+
+   --debug
+      Output debug level logging.
+
+   -q, --quiet
+      Output warning level logging.
+
+   -t, --type *type*
+      Specify the type of type being imported.  The valid types are
+      "names", "hierarchy" and "group-to-hierarchy".
+
+   -i, --input *input-file*
+      The input CSV file.  The necessary contents of the file depend on
+      the type specified.
+
+Input type formats:
+
+Each input type must use the format specified below. Values containing
+commas must be quoted.  The number of columns in the CSV file must match
+the number of fields listed.  The input file should not have a header
+row.
+
+   names
+
+      Fields: username, first name, last name
+
+   hierarchy
+
+      Fields: hierarchy item name, item description, parent name
+
+      A top level hierarchy item should have a blank parent name.
+
+   group-to-hierarchy
+
+      Fields: groupname, hierachy item name
+
+
+EOF;
+}
+

@@ -1,0 +1,22 @@
+Dear XDMoD user:
+
+You are receiving this message because you currently have an account on XDMoD associated with this e-mail address.
+
+Today, we are proud to announce the availability of XDMoD [Version].
+
+Major updates in this new release of XDMoD include:
+
+- [Feature Item 1]
+- [Feature Item 2]
+- [Feature Item 3]
+
+Also, you may find it helpful, if you have not already done so, to review the XDMoD manual
+and list of Frequently Asked Questions (FAQ) found at
+
+https://xdmod.ccr.buffalo.edu/faq/
+https://xdmod.ccr.buffalo.edu/user_manual/
+
+Please contact us with any questions or comments at ccr-xdmod-help@buffalo.edu.
+
+Thank you for using XDMoD.
+The XDMoD Team

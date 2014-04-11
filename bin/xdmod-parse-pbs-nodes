@@ -1,0 +1,437 @@
+#!/usr/bin/env php
+<?php
+/**
+ * pbsnodes output parser.
+ *
+ * @author Jeffrey T. Palmer <jtpalmer@ccr.buffalo.edu>
+ */
+
+require_once __DIR__ . '/../configuration/linker.php';
+
+use CCR\DB;
+use CCR\Log;
+use Xdmod\NodeAttributeHelper;
+
+// Disable memory limit.
+ini_set('memory_limit', -1);
+
+try {
+   main();
+} catch (Exception $e) {
+   $logger->crit(array(
+      'message'    => $e->getMessage(),
+      'stacktrace' => $e->getTraceAsString(),
+   ));
+   exit(1);
+}
+
+function main()
+{
+    global $logger, $db, $helper;
+
+    $opts = array(
+        array('h',  'help'),
+        array('v',  'verbose'),
+        array('',   'debug'),
+        array('q',  'quiet'),
+        array('r:', 'resource:'),
+        array('i:', 'input:'),
+        array('d:', 'directory:'),
+        array('',   'start-date:'),
+        array('',   'end-date:'),
+        array('',   'no-append'),
+    );
+
+    $shortOptions = implode(
+        '',
+        array_map(function ($opt) { return $opt[0]; }, $opts)
+    );
+    $longOptions = array_map(function ($opt) { return $opt[1]; }, $opts);
+
+    $args = getopt($shortOptions, $longOptions);
+
+    if ($args === false) {
+        fwrite(STDERR, "Failed to parse arguments\n");
+        exit(1);
+    }
+
+    $help = $noAppend = false;
+
+    $input = $directory = $resource = $startDate = $endDate = null;
+
+    $logLevel = -1;
+
+    foreach ($args as $key => $value) {
+        switch ($key) {
+            case 'h':
+            case 'help':
+                $help = true;
+                break;
+            case 'q':
+            case 'quiet':
+                $logLevel = max($logLevel, Log::WARNING);
+                break;
+            case 'v':
+            case 'verbose':
+                $logLevel = max($logLevel, Log::INFO);
+                break;
+            case 'debug':
+                $logLevel = max($logLevel, Log::DEBUG);
+                break;
+            case 'r':
+            case 'resource':
+                $resource = $value;
+                break;
+            case 'i':
+            case 'input':
+                $input = $value;
+                break;
+            case 'd':
+            case 'directory':
+                $directory = $value;
+                break;
+            case 'start-date':
+                $startDate = $value;
+                break;
+            case 'end-date':
+                $endDate = $value;
+                break;
+            case 'no-append':
+                $noAppend = true;
+                break;
+            default:
+                fwrite(STDERR, "Unexpected argument '$key'\n");
+                exit(1);
+                break;
+        }
+    }
+
+    if ($logLevel === -1) { $logLevel = Log::NOTICE; }
+
+    if ($help) {
+        displayHelpText();
+        exit;
+    }
+
+    $conf = array(
+        'file'            => false,
+        'mail'            => false,
+        'consoleLogLevel' => $logLevel,
+    );
+
+    $logger = Log::factory('xdmod-parse-pbs-nodes', $conf);
+
+    if ($resource === null) {
+        $logger->crit('Resource name required');
+        exit(1);
+    }
+
+    if ($input === null && $directory === null) {
+        $logger->crit('No input specified');
+        exit(1);
+    }
+
+    if ($input !== null && $directory !== null) {
+        $logger->crit('Specify either a file or directory, not both');
+        exit(1);
+    }
+
+    if ($input !== null && !is_file($input)) {
+        $logger->crit("'$input' is not a file");
+        exit(1);
+    }
+
+    if ($directory !== null && !is_dir($directory)) {
+        $logger->crit("'$directory' is not a directory");
+        exit(1);
+    }
+
+    if ($directory === null) {
+        if ($startDate === null) {
+            $startDate = date('Y-m-d');
+            $logger->info("Using start date '$startDate'");
+        }
+
+        if ($endDate === null) {
+            $endDate = $startDate;
+            $logger->info("Using end date '$endDate'");
+        }
+
+        foreach (array($startDate, $endDate) as $date) {
+            $logger->debug("Validating date '$date'");
+
+            if (!preg_match('/^(\d{4})-(\d\d)-(\d\d)$/', $date, $matches)) {
+                $logger->crit("Invalid date '$date'");
+                exit(1);
+            }
+
+            if (!checkdate($matches[2], $matches[3], $matches[1])) {
+                $logger->crit("Invalid date '$date'");
+                exit(1);
+            }
+        }
+
+        if (strcmp($startDate, $endDate) > 1) {
+            $logger->crit('End date cannot be before start date');
+            exit(1);
+        }
+    }
+
+    // NOTE: "process_start_time" is needed for the log summary.
+    $logger->notice(array(
+        'message'            => 'xdmod-parse-pbs-nodes start',
+        'process_start_time' => date('Y-m-d H:i:s'),
+    ));
+
+    try {
+        $logger->debug('Creating database connection');
+        $db = DB::factory('shredder');
+    } catch (Exception $e) {
+        $msg = 'Failed to create database connection: ' . $e->getMessage();
+        $logger->crit(array(
+            'message'    => $msg,
+            'stacktrace' => $e->getTraceAsString(),
+        ));
+        exit(1);
+    }
+
+    try {
+        $helper = NodeAttributeHelper::factory($db);
+        $helper->setLogger($logger);
+    } catch (Exception $e) {
+        $logger->crit(array(
+            'message'    => $e->getMessage(),
+            'stacktrace' => $e->getTraceAsString(),
+        ));
+        exit(1);
+    }
+
+    try {
+        $helper->createTable();
+    } catch (Exception $e) {
+        $msg = 'Failed to create node table: ' . $e->getMessage();
+        $logger->crit(array(
+            'message'    => $msg,
+            'stacktrace' => $e->getTraceAsString(),
+        ));
+        exit(1);
+    }
+
+    $inputs
+        = $input !== null
+        ? array(
+            array(
+                'file'       => $input,
+                'start_date' => $startDate,
+                'end_date'   => $endDate,
+            ),
+        )
+        : getDirectoryFiles($directory, $resource);
+
+    foreach ($inputs as $input) {
+        processFile(
+            $input['file'],
+            $resource,
+            $input['start_date'],
+            $input['end_date'],
+            $noAppend
+        );
+    }
+
+    // NOTE: "process_end_time" is needed for the log summary.
+    $logger->notice(array(
+        'message'          => 'xdmod-parse-pbs-nodes end',
+        'process_end_time' => date('Y-m-d H:i:s'),
+    ));
+
+    exit;
+}
+
+function getDirectoryFiles($dir, $resource)
+{
+    global $logger, $helper;
+
+    $maxDate = $helper->getMostRecentDate($resource);
+
+    $inputs = array();
+
+    if ($maxDate === null) {
+        $msg = "No data found for resource '$resource', using all files in"
+            . " directory";
+        $logger->notice($msg);
+
+        $files = glob("$dir/*.xml");
+
+        foreach ($files as $file) {
+            if (preg_match('/\b(\d{4})(\d\d)(\d\d).xml$/', $file, $matches)) {
+                array_shift($matches);
+                list($year, $month, $day) = $matches;
+                $startDate = "$year-$month-$day";
+
+                $inputs[] = array(
+                    'file'       => $file,
+                    'start_date' => $startDate,
+                    'end_date'   => $startDate,
+                );
+            } else {
+                $logger->info("Skipping '$file'");
+            }
+        }
+
+        return $inputs;
+    }
+
+    $logger->debug("Max date: $maxDate");
+
+    $now  = new DateTime('now');
+    $date = new DateTime($maxDate);
+
+    $oneDay = new DateInterval('P1D');
+
+    while ($date->diff($now)->days > 0) {
+        $date->add($oneDay);
+
+        $path = $dir . '/' . $date->format('Ymd') . '.xml';
+        $logger->debug($path);
+
+        $startDate = $date->format('Y-m-d');
+
+        $inputs[] = array(
+            'file'       => $path,
+            'start_date' => $startDate,
+            'end_date'   => $startDate,
+        );
+    }
+
+    return $inputs;
+}
+
+function processFile($file, $resource, $startDate, $endDate, $noAppend)
+{
+    global $logger, $helper;
+
+    $logger->notice("Processing file '$file'");
+
+    if (!is_file($file)) {
+        $logger->err("'$file' is not a file");
+        return null;
+    }
+
+    if (!is_readable($file)) {
+        $logger->err("'$file' is not readable");
+        return null;
+    }
+
+    try {
+        $logger->debug('Creating DOMDocument');
+        $doc = new DOMDocument();
+
+        $logger->info('Loading input file');
+        if (!$doc->load($file)) {
+            throw new Exception("Failed to load xml from file '$file'");
+        }
+
+        $logger->debug('Creating DOMXPath');
+        $xpath = new DOMXPath($doc);
+    } catch (Exception $e) {
+        $msg = 'Failed to load input file: ' . $e->getMessage();
+        $logger->crit(array(
+            'message'    => $msg,
+            'stacktrace' => $e->getTraceAsString(),
+        ));
+        exit(1);
+    }
+
+    try {
+        $results = $helper->updateNodeAttrFromXPath(
+            $xpath,
+            $resource,
+            $startDate,
+            $endDate,
+            $noAppend
+        );
+
+        $updateCount = $results['update_count'];
+        $insertCount = $results['insert_count'];
+
+    } catch (Exception $e) {
+        $msg = 'Failed to update node data: ' . $e->getMessage();
+        $logger->crit(array(
+            'message'    => $msg,
+            'stacktrace' => $e->getTraceAsString(),
+        ));
+        exit(1);
+    }
+
+    if ($updateCount == 0 && $insertCount == 0) {
+        $logger->notice('Did not update or insert any records');
+    }
+
+    if ($updateCount > 0) {
+        $logger->notice("Updated $updateCount records");
+    }
+
+    if ($insertCount > 0) {
+        $logger->notice("Inserted $insertCount records");
+    }
+
+    return $results;
+}
+
+function displayHelpText()
+{
+    echo <<<'EOF'
+
+Usage: xdmod-parse-pbs-nodes [-v] -r resource -i input.xml
+
+Parse the ouput from "pbsnodes -x" and store the data in the database.
+The file "node_attributes.json" is used to determine the relevant node
+attributes.
+
+Options:
+
+    -h, --help
+        Display this message and exit.
+
+    -v, --verbose
+        Output info level logging.
+
+    --debug
+        Output debug level logging.
+
+    -q, --quiet
+        Output only warnings and errors.
+
+    -r, --resource *resource-name*
+        Name of the resource (required).
+
+    -i, --input *input-file*
+        Input XML from "pbsnodes -x".
+
+    -d, --directory *input-dir*
+        Directory containing input files.  The files in this directory
+        must be named YYYYMMDD.xml with data corresponding to the date
+        used in the file name.  Only files with dates after the most
+        recent data for the specified resource will be processed.
+
+    --start-date *date*
+        Start date for node data.  If used with "--input" the date is
+        used as the start date of the data contained in the file.  Not
+        compatible with "--directory".
+
+    --end-date *date*
+        End date for node data.  If used with "--input" the date is
+        used as the end date of the data contained in the file.  Not
+        compatible with "--directory".
+
+    --no-append
+        Do not update existing DB entries.  If this option is not
+        specified, entries in the database will be updated whenever a
+        node is found with the same name and attributes (the end date
+        will be changed).  If this option is specified, a new entry in
+        the database will always be created.
+
+
+EOF;
+}
+

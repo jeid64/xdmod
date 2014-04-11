@@ -1,0 +1,62 @@
+XDMoD includes the following open source software:
+
+Name:    ExtJS
+License: GPL 3.0
+Author:  Sencha Inc.
+Link:    http://www.sencha.com/
+
+Name:    Zend
+License: New BSD License
+Author:  Zend Technologies USA, Inc.
+Link:    http://framework.zend.com/
+
+Name:    jQuery
+License: MIT license
+Author:  jQuery Foundation and other contributors
+Link:    http://jquery.com/
+
+Name:    HighCharts
+License: Creative Commons Attribution-NonCommercial 3.0
+Author:  Torstein Hønsi
+Link:    http://www.highcharts.com/
+
+Name:    Jasper Reports
+License: LGPL
+Author:  Jaspersoft Corporation
+Link:    http://community.jaspersoft.com/project/jasperreports-library
+
+Name:    Commons BeanUtils
+License: Apache License Version 2.0
+Author:  The Apache Software Foundation
+Link:    http://commons.apache.org/proper/commons-beanutils/
+
+Name:    Commons Collections
+License: Apache License Version 2.0
+Author:  The Apache Software Foundation
+Link:    http://commons.apache.org/proper/commons-collections/
+
+Name:    Commons Digester
+License: Apache License Version 2.0
+Author:  The Apache Software Foundation
+Link:    http://commons.apache.org/proper/commons-digester/
+
+Name:    Commons Logging
+License: Apache License Version 2.0
+Author:  The Apache Software Foundation
+Link:    http://commons.apache.org/proper/commons-logging/
+
+Name:    iText
+License: Affero General Public License
+Author:  iText Software Corp.
+Link:    http://itextpdf.com/
+
+Name:    Apache POI
+License: Apache License Version 2.0
+Author:  The Apache Software Foundation
+Link:    http://poi.apache.org/
+
+Name:    Xalan-Java
+License: Apache License Version 2.0
+Author:  The Apache Software Foundation
+Link:    http://xml.apache.org/xalan-j/
+

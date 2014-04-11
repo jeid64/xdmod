@@ -1,0 +1,14 @@
+.role_manager .btn_elevate_user {
+   margin-left: 68px;
+   margin-top: 10px;
+}
+
+.role_manager .btn_downgrade_user {
+   margin-left: 87px;
+   margin-top: 10px;
+}
+
+.role_manager .lbl_member_status{
+   font-size: 12px;
+   padding-top: 10px;
+}

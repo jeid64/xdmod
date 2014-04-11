@@ -1,0 +1,11 @@
+/* common.css */
+
+/* 
+Modal windows intended to appear over "container masked" components can potentially
+be obstructed by the message associated with the mask.  Adjusting the z-index relieves
+this obstruction.
+*/
+
+.ext-el-mask-msg {
+   z-index: 9001 !important;
+}

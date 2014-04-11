@@ -1,0 +1,603 @@
+#!/usr/bin/env php
+<?php
+
+try {
+   main();
+} catch (Exception $e) {
+   _error($e->getMessage() . "\n\n" . $e->getTraceAsString());
+   exit(1);
+}
+
+function main()
+{
+   global $quiet, $debug, $destDir;
+
+   $srcDir = __DIR__;
+
+   $portalConfig = $srcDir . '/configuration/portal_settings.ini';
+
+   $name    = 'xdmod';
+   $version = getVersionString($portalConfig);
+
+   $opts = array(
+      array('h', 'help'),
+      array('',  'quiet'),
+      array('',  'debug'),
+      array('',  'prefix:'),
+      array('',  'bindir:'),
+      array('',  'libdir:'),
+      array('',  'datadir:'),
+      array('',  'sysconfdir:'),
+      array('',  'docdir:'),
+      array('',  'logdir:'),
+      array('',  'httpdconfdir:'),
+      array('',  'logrotatedconfdir:'),
+      array('',  'crondconfdir:'),
+   );
+
+   $shortOptions = implode(
+      '',
+      array_map(function ($opt) { return $opt[0]; }, $opts)
+   );
+   $longOptions = array_map(function ($opt) { return $opt[1]; }, $opts);
+
+   $args = getopt($shortOptions, $longOptions);
+
+   if ($args === false) {
+      fwrite(STDERR, "Failed to parse arguments\n");
+      exit(1);
+   }
+
+   $help = $quiet = $debug = false;
+
+   $prefix = '/usr/local/' . $name;
+
+   $dirs = array(
+      'src' => $srcDir,
+   );
+
+   foreach ($args as $key => $value) {
+      switch ($key) {
+         case 'h':
+         case 'help':
+            $help = true;
+            break;
+         case 'quiet':
+            $quiet = true;
+            break;
+         case 'debug':
+            $debug = true;
+            break;
+         case 'prefix':
+            $prefix = $value;
+            break;
+         case 'bindir':
+            $dirs['bin'] = $value;
+            break;
+         case 'libdir':
+            $dirs['lib'] = $value;
+            break;
+         case 'datadir':
+            $dirs['data'] = $value;
+            break;
+         case 'sysconfdir':
+            $dirs['conf'] = $value;
+            break;
+         case 'docdir':
+            $dirs['doc'] = $value;
+            break;
+         case 'logdir':
+            $dirs['log'] = $value;
+            break;
+         case 'httpdconfdir':
+            $dirs['httpd'] = $value;
+            break;
+         case 'logrotatedconfdir':
+            $dirs['logrotated'] = $value;
+            break;
+         case 'crondconfdir':
+            $dirs['crond'] = $value;
+            break;
+         default:
+            fwrite(STDERR, "Unexpected argument '$key'\n");
+            exit(1);
+            break;
+      }
+   }
+
+   if ($debug) {
+      $quiet = false;
+   }
+
+   if ($help) {
+      outputHelpText();
+      exit;
+   }
+
+   $defaultDirs = array(
+      'bin'        => $prefix . '/bin',
+      'lib'        => $prefix . '/lib',
+      'data'       => $prefix . '/share',
+      'conf'       => $prefix . '/etc',
+      'doc'        => $prefix . '/doc',
+      'log'        => $prefix . '/logs',
+      'httpd'      => $prefix . '/etc/apache.d',
+      'logrotated' => $prefix . '/etc/logrotate.d',
+      'crond'      => $prefix . '/etc/cron.d',
+   );
+
+   foreach ($defaultDirs as $key => $dir) {
+      if (!isset($dirs[$key])) {
+         $dirs[$key] = $dir;
+      }
+   }
+
+   $destDir = getenv('DESTDIR') ?: '';
+
+   _debug("DESTDIR = $destDir");
+
+   if ($destDir !== '' && !is_dir($destDir)) {
+      _debug("'$destDir' does not exist, creating directory");
+
+      if (!mkdir($destDir, 0755, true)) {
+         _error("Failed to create directory '$destDir'");
+         exit(1);
+      }
+   }
+
+   $prefixDestDir = $destDir . $prefix;
+   if (!is_dir($prefixDestDir)) {
+      _debug("'$prefixDestDir' does not exist, creating directory");
+
+      if (!mkdir($prefixDestDir, 0755, true)) {
+         _error("Failed to create directory '$prefixDestDir'");
+         exit(1);
+      }
+   }
+
+   _debug("Directory map:");
+   foreach ($dirs as $key => $dir) {
+      _debug("$key: $dir");
+   }
+
+   installAll($dirs);
+   substitutePaths($dirs);
+
+   exit;
+}
+
+function getVersionString($file)
+{
+   _debug("Parsing file '$file'");
+
+   $config = parse_ini_file($file, true);
+
+   if (!isset($config['general']) || !isset($config['general']['version'])) {
+      throw new Exception('Failed to find version number');
+   }
+
+   return $config['general']['version'];
+}
+
+function installAll(array $dirs)
+{
+   global $destDir;
+
+   _info('Copying files');
+
+   installData($dirs['src'],       $destDir . $dirs['data']);
+   installBin($dirs['src'],        $destDir . $dirs['bin']);
+   installLib($dirs['src'],        $destDir . $dirs['lib']);
+   installConf($dirs['src'],       $destDir . $dirs['conf']);
+   installHttpd($dirs['src'],      $destDir . $dirs['httpd']);
+   installLogrotated($dirs['src'], $destDir . $dirs['logrotated']);
+   installCrond($dirs['src'],      $destDir . $dirs['crond']);
+   installDoc($dirs['src'],        $destDir . $dirs['doc']);
+   installLog($dirs['src'],        $destDir . $dirs['log']);
+}
+
+function installBin($src, $dest)
+{
+   _info('Copying executables');
+
+   createDir($dest);
+   installDirContents($src . '/bin', $dest);
+}
+
+function installLib($src, $dest)
+{
+   _info('Copying library scripts');
+
+   createDir($dest);
+   installDirContents($src . '/background_scripts', $dest);
+}
+
+function installData($src, $dest)
+{
+   _info('Copying data files');
+
+   $dirs = array(
+      'classes',
+      'ddl',
+      'external_libraries',
+      'html',
+      'libraries',
+      'reporting',
+      'templates',
+   );
+
+   foreach ($dirs as $dir) {
+      installDir($src . '/' . $dir, $dest . '/' . $dir);
+   }
+
+   createDir($dest . '/configuration');
+
+   $files = array(
+      'configuration/constants.php',
+      'configuration/linker.php',
+   );
+
+   foreach ($files as $file) {
+      installFile($src . '/' . $file, $dest . '/configuration');
+   }
+}
+
+function installConf($src, $dest)
+{
+   _info('Copying configuration files');
+
+   $exclude = array(
+      'constants.php',
+      'linker.php',
+      'apache.conf',
+      'logrotate.conf',
+      'cron.conf',
+   );
+
+   createDir($dest);
+
+   installDirContents($src . '/configuration', $dest, $exclude);
+}
+
+function installDoc($src, $dest)
+{
+   _info('Copying documentation files');
+
+   $files = array(
+      'AUTHORS',
+      'CHANGELOG',
+      'LICENSE',
+      'NOTICE',
+      'README',
+   );
+
+   createDir($dest);
+
+   foreach ($files as $file) {
+      installFile($src . '/' . $file, $dest);
+   }
+
+   installDir($src . '/docs/html', $dest . '/html');
+}
+
+function installHttpd($src, $dest)
+{
+   createDir($dest);
+   copyFile($src . '/configuration/apache.conf', $dest . '/xdmod.conf');
+}
+
+function installLogrotated($src, $dest)
+{
+   createDir($dest);
+   copyFile($src . '/configuration/logrotate.conf', $dest . '/xdmod');
+}
+
+function installCrond($src, $dest)
+{
+   createDir($dest);
+   copyFile($src . '/configuration/cron.conf', $dest . '/xdmod');
+}
+
+function installLog($src, $dest)
+{
+   _info('Creating log directory');
+
+   createDir($dest, 0777);
+}
+
+function createDir($dir, $mode = 0755, $recursive = true)
+{
+   _debug("Creating directory '$dir'");
+
+   if (is_dir($dir)) {
+      _debug("Directory '$dir' already exists");
+      return;
+   }
+
+   $oldUmask = umask(0);
+   if (!mkdir($dir, $mode, $recursive)) {
+      throw new Exception("Failed to create directory '$dir'");
+   }
+   umask($oldUmask);
+}
+
+/**
+ * Install the contents of a directory.
+ *
+ * @param string $src Source directory path.
+ * @param string $dest Destination directory path.
+ * @param array $exclude Files to not install.
+ */
+function installDirContents($src, $dest, array $exclude = array())
+{
+   $files = scandir($src);
+
+   if ($files === false) {
+      throw new Exception("Failed to scan directory '$src'");
+   }
+
+   foreach ($files as $file) {
+      $path = $src . '/' . $file;
+
+      if (in_array($file, array('.', '..'))) {
+         continue;
+      }
+
+      if (in_array($file, $exclude)) {
+         _debug("Skipping '$path'");
+         continue;
+      }
+
+      if (is_file($path)) {
+         installFile($path, $dest);
+      } elseif (is_dir($path)) {
+         installDir($path, $dest . '/' . $file);
+      } else {
+         throw new Exception("Unexpected file type for '$path'");
+      }
+   }
+}
+
+/**
+ * Install a directory.
+ *
+ * @param string $src Source directory path.
+ * @param string $dest Destination directory path.
+ */
+function installDir($src, $dest)
+{
+   if (!is_dir($dest)) {
+      if (!mkdir($dest, 0755, true)) {
+         throw new Exception("Failed to create directory '$dest'");
+      }
+   }
+
+   installDirContents($src, $dest);
+}
+
+/**
+ * Install a file.
+ *
+ * @param string $src Source file path.
+ * @param string $dest Destination directory path.
+ */
+function installFile($src, $dest)
+{
+   $path = explode('/', $src);
+   $file = array_pop($path);
+
+   copyFile($src, $dest . '/' . $file);
+}
+
+function copyFile($src, $dest)
+{
+   _debug("Copying '$src' to '$dest'");
+
+   if (is_dir($dest)) {
+      $msg = "Failed to copy '$src' to '$dest': $dest is a directory";
+      throw new Exception($msg);
+   }
+
+   if (is_file($dest) && !is_writable($dest)) {
+      $msg = "Failed to copy '$src' to '$dest': $dest is not writable";
+      throw new Exception($msg);
+   }
+
+   if (!copy($src, $dest)) {
+      throw new Exception("Failed to copy '$src' to '$dest'");
+   }
+
+   if (!chmod($dest, fileperms($src))) {
+      throw new Exception("Failed change the mode of file '$dest'");
+   }
+}
+
+function substitutePaths($dirs)
+{
+   global $destDir;
+
+   _info('Updating paths');
+
+   substituteInDir($destDir . $dirs['bin'], array(
+      "#__DIR__\s*\.\s*'/\.\./configuration/linker\.php'#"
+      => "'" . $dirs['data'] . "/configuration/linker.php'"
+   ));
+
+   substituteInDir($destDir . $dirs['lib'], array(
+      "#__DIR__\s*\.\s*'/\.\./html/tmp'#"
+      => "'" . $dirs['data'] . "/html/tmp'",
+      "#__DIR__\s*\.\s*'/\.\./configuration/linker\.php'#"
+      => "'" . $dirs['data'] . "/configuration/linker.php'"
+   ));
+
+   substituteInDir($destDir . $dirs['data'] . '/templates', array(
+      '#/usr/share/xdmod#' => $dirs['data'],
+   ));
+
+   substituteInFile($destDir . $dirs['data'] . '/configuration/linker.php', array(
+      '#^\$baseDir\s*=.+$#m' => '$baseDir = \'' . $dirs['data'] . "';",
+   ));
+
+   substituteInFile($destDir . $dirs['data'] . '/reporting/jasper_builder/ReportBuilder.sh', array(
+      '#^\s*DIR\s*=.+$#m'        => '',
+      '#^(\s*)SETTINGS\s*=.+$#m' => '$1SETTINGS="' . $dirs['conf'] . '/portal_settings.ini";',
+   ));
+
+   substituteInFile($destDir . $dirs['data'] . '/configuration/constants.php', array(
+      '#^define\(\'CONFIG_DIR\',.+$#m'
+      => "define('CONFIG_DIR', '" . $dirs['conf'] . "');",
+      '#^define\(\'LOG_DIR\',.+$#m'
+      => "define('LOG_DIR', '" . $dirs['log'] . "');",
+      '#^define\(\'TEMPLATE_DIR\',.+$#m'
+      => "define('TEMPLATE_DIR', '" . $dirs['data'] . "/templates');",
+   ));
+
+   substituteInFile($destDir . $dirs['conf'] . '/portal_settings.ini', array(
+      '#/usr/share/xdmod#' => $dirs['data'],
+   ));
+
+   substituteInFile($destDir . $dirs['logrotated'] . '/xdmod', array(
+      '#/var/log/xdmod#' => $dirs['log'],
+   ));
+
+   substituteInFile($destDir . $dirs['crond'] . '/xdmod', array(
+      '#/usr/bin#'       => $dirs['bin'],
+      '#/usr/lib/xdmod#' => $dirs['lib'],
+   ));
+
+   substituteInFile($destDir . $dirs['httpd'] . '/xdmod.conf', array(
+      '#/usr/share/xdmod#' => $dirs['data'],
+      '#/var/log/xdmod#'   => $dirs['log'],
+   ));
+}
+
+function substituteInDir($dir, array $subs)
+{
+   $iter = new RecursiveIteratorIterator(
+      new RecursiveDirectoryIterator(
+         $dir,
+         FilesystemIterator::SKIP_DOTS
+      ),
+      RecursiveIteratorIterator::SELF_FIRST
+   );
+
+   foreach ($iter as $path => $info) {
+      if ($info->isFile()) {
+         substituteInFile($path, $subs);
+      }
+   }
+}
+
+function substituteInFile($file, array $subs)
+{
+   _debug("Performing substitutions in $file");
+
+   $contents = file_get_contents($file);
+
+   if ($contents === false) {
+      throw new Exception("Failed to get contents of file '$file'");
+   }
+
+   foreach ($subs as $pattern => $replacement) {
+      $contents = preg_replace($pattern, $replacement, $contents);
+   }
+
+   if (file_put_contents($file, $contents) === false) {
+      throw new Exception("Failed to put contents of file '$file'");
+   }
+}
+
+function outputHelpText()
+{
+   echo <<<'EOF'
+
+Usage: install [-h] [--debug] [--prefix=*dir*]
+
+   -h, --help
+      Output this message and exit.
+
+   --debug
+      Output debugging messages.
+
+   --prefix *prefix*
+      Install in this directory (default: /usr/local/xdmod).
+
+   --bindir *dir*
+      Install executables in this directory (default: *prefix*/bin).
+
+   --libdir *dir*
+      Install library files in this directory (default: *prefix*/lib).
+
+   --datadir *dir*
+      Install data files in this directory (default: *prefix*/share).
+
+   --sysconfdir *dir*
+      Install configuration files in this directory
+      (default: *prefix*/etc).
+
+   --docdir *dir*
+      Install documentation in this directory (default: *prefix*/doc).
+
+   --logdir *dir*
+      Use this directory to store log files (default: *prefix*/logs).
+
+   --httpdconfdir *dir*
+      Copy the Apache config file to this directory
+      (default: *prefix*/etc/apache.d).
+
+   --logrotatedconfdir *dir*
+      Copy the logrotate config file to this directory
+      (default: *prefix*/etc/logrotate.d).
+
+   --crondconfdir *dir*
+      Copy the cron config file to this directory
+      (default: *prefix*/etc/cron.d).
+
+
+EOF;
+}
+
+/**
+ * Output a debugging message if the debug option was specified.
+ */
+function _debug($text)
+{
+   global $debug;
+
+   if (!$debug) {
+      return;
+   }
+
+   fwrite(STDERR, "DEBUG: $text\n");
+}
+
+/**
+ * Output an informational message.
+ */
+function _info($text)
+{
+   global $quiet;
+
+   if ($quiet) {
+      return;
+   }
+
+   fwrite(STDERR, "$text\n");
+}
+
+/**
+ * Output a warning message.
+ */
+function _warn($text)
+{
+   fwrite(STDERR, "WARN: $text\n");
+}
+
+/**
+ * Output an error message.
+ */
+function _error($text)
+{
+   fwrite(STDERR, "ERROR: $text\n");
+}
+

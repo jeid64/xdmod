@@ -1,0 +1,101 @@
+			.ulm_section_profiles {
+				width: 230px !important;
+				padding-right: 10px;
+				padding-bottom: 10px;
+			}
+			
+			.ulm_section_app_kernels {
+				width: 230px !important;
+				padding-right: 10px;
+				padding-bottom: 10px;
+			}
+			
+			.ulm_section_resource_suggestions {
+				width: 460px !important;	
+				padding-bottom: 10px;		
+			}
+			
+			.ulm_section_description {
+				width: 700px !important;			
+			}			
+			
+			
+			.ulm_panel .x-btn-group-header{
+				text-align: left !important;
+			}
+			
+			.ulm_panel .x-btn-group-header-text {
+				font-size: 12px;
+			}
+			
+			.ulm_data_link {
+				color: #00f;
+				text-decoration: underline;
+				background-image:: none !important;
+				margin-top: -2px;
+			}
+			
+			.resource_entry {
+				background: url('../images/server.png') no-repeat;
+				padding-left: 45px;
+				font-weight: bold;
+				height: 33px;
+				color: #000;
+			}
+			
+			.resource_entry .host{
+				font-family: Courier New;
+				color: #00f;
+			}
+			
+			
+			/*  For Animated Dataview */
+			
+			
+			#ulm_resources {
+    background-color: #fff;
+    text-shadow: #fff 0 1px 0;
+}
+
+#ulm_resources ul {
+    position: relative;
+    display: block;
+    height: auto;
+    font-size: 85%;
+}
+
+#ulm_resources ul li img {
+    margin-bottom: 1px;
+}
+
+#ulm_resources ul li {
+    float: left;
+    padding: 8px 17px;
+    margin: 5px;
+    text-align: center;
+    line-height: 1.25em;
+    color: #333;
+    font-family: "Helvetica Neue",sans-serif;
+    height: 113px;
+    width: 112px;
+    overflow: hidden;
+    border-top: 1px solid transparent;
+    cursor: pointer;
+}
+
+#ulm_resources ul li.x-view-selected {
+    background-color: rgba(100, 100, 100, .15);
+    -moz-border-radius: 8px;
+    -webkit-border-radius: 8px;
+    border-top: 1px solid rgba(0, 0, 0, .15);
+}
+
+#ulm_resources li strong {
+    color: #000;
+    display: block;
+}
+
+#ulm_resources li span {
+    color: #999;
+    font-size: 11px;
+}

@@ -1,0 +1,65 @@
+{
+    "name": "node_attr",
+    "columns": [
+        {
+            "name": "node_attr_id",
+            "type": "int",
+            "nullable": false,
+            "auto": true,
+            "key": "primary"
+        },
+        {
+            "name": "resource",
+            "type": "varchar(255)",
+            "nullable": false
+        },
+        {
+            "name": "name",
+            "type": "varchar(255)",
+            "nullable": false
+        },
+        {
+            "name": "start_date",
+            "type": "date",
+            "nullable": false
+        },
+        {
+            "name": "end_date",
+            "type": "date",
+            "nullable": false,
+            "key": true
+        },
+        {
+            "name": "np",
+            "type": "int"
+        },
+        {
+            "name": "ntype",
+            "type": "varchar(255)"
+        },
+        {
+            "name": "properties",
+            "type": "varchar(255)"
+        }
+    ],
+    "keys": [
+        {
+            "name": "node_start_date",
+            "type": "unique",
+            "columns": [
+                "resource",
+                "name",
+                "start_date"
+            ]
+        },
+        {
+            "name": "resource_dates",
+            "columns": [
+                "resource",
+                "start_date",
+                "end_date"
+            ]
+        }
+    ]
+}
+

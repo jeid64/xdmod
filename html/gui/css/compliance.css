@@ -1,0 +1,97 @@
+/* Compliance Grid Stylings */
+
+.compliance_grid.btn_download {
+   background-image: url('../images/report_generator/download_report.png');
+}
+
+.compliance_grid div.compliance_stats:hover {
+   background-color:#637af2 !important;
+}
+
+.compliance_grid .x-grid3-row-over {
+   background-color: #fff !important;
+   background-image: none !important;
+}
+
+.compliance_grid .x-grid3-cell-selected {
+   background-color: #8a9bf4 !important;
+}
+
+.compliance_grid div.compliance_stats {
+    border: 1px solid #fff;
+}
+
+.compliance_grid .x-grid3-hd-inner span {
+
+   background-image: url('../images/compliance_info.png');
+   background-repeat: no-repeat;
+   padding-left: 15px;
+   
+}
+
+
+.compliance_grid .x-grid3-cell-selected {
+    background-color: #fff !important;
+}
+    
+.compliance_grid .x-grid3-cell-selected div.compliance_stats {
+    border: 0px solid #000;
+    background-color:#637af2;
+}
+
+.compliance_grid .compliance_requirement_cell .x-grid3-cell-inner,
+.compliance_grid .compliance_requirement_cell .x-grid3-hd-inner,
+.compliance_grid .x-grid3-cell-first.compliance_section_break .x-grid3-cell-inner,
+.compliance_grid .compliance_empty_requirement_cell .x-grid3-cell-inner {
+   border-right: 0px;
+}
+
+.compliance_grid .x-grid3-cell-inner,
+.compliance_grid .x-grid3-hd-inner {
+   padding: 0 3px 0 0px !important;
+   border-right: 1px solid #bbb;
+}
+
+.compliance_grid .x-grid3-row-over {
+   border-top: 1px solid #fff;
+   border-bottom: 1px solid #eee;
+}
+
+.compliance_grid .x-grid3-row-over .compliance_requirement_cell{
+   background-color: #bdddf8;
+}
+
+.compliance_grid .compliance_section_break {
+   background-color:#efebfa;
+   color: #00f;
+   font-weight: bold;
+   height: 15px;
+}
+
+.compliance_grid .compliance_requirement_cell,
+.compliance_grid .compliance_empty_requirement_cell {
+   background-color:#eee;
+   font-weight: bold;
+   height: 15px;
+}
+
+.compliance_grid .job_count {
+   color: #000;
+   background-color:#f1f5c7;
+}
+
+.compliance_grid .requested_requirement {
+   color:#978f8e;
+}
+
+.compliance_grid .compliance_stat_cell {
+   height: 15px;
+}
+
+.compliance_grid .compliance_stat_cell.x-grid3-cell-selected .compliance_stats {
+   border: 1px solid #000;
+}
+
+.compliance_grid .compliance_stat_cell.x-grid3-cell-selected .compliance_stats div {
+   opacity: 0.8 !important;
+}

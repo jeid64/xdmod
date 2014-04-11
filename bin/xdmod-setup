@@ -1,0 +1,986 @@
+#!/usr/bin/env php
+<?php
+
+require_once __DIR__ . '/../configuration/linker.php';
+
+echo "XDMoD Setup Utility\n\n";
+
+// ----------------------------------------------------------
+
+$files = array(
+   'portal_settings_template' => TEMPLATE_DIR . '/portal_settings.template',
+   'portal_settings'          => CONFIG_DIR . '/portal_settings.ini',
+   'organization'             => CONFIG_DIR . '/organization.json',
+   'resources'                => CONFIG_DIR . '/resources.json',
+   'hierarchy'                => CONFIG_DIR . '/hierarchy.json',
+);//files
+
+$portal_settings   = loadPortalSettings();
+$resource_settings = loadJsonFile($files['resources']);
+
+// ----------------------------------------------------------
+
+mainMenu();
+
+// ----------------------------------------------------------
+
+function mainMenu($msg = '')
+{
+   clearScreen();
+
+   $menu = array(
+      '1' => array(
+         'label'   => 'General Settings',
+         'handler' => 'generalSetup',
+      ),
+      '2' => array(
+         'label'   => 'Database Settings',
+         'handler' => 'databaseSetup',
+      ),
+      '3' => array(
+         'label'   => 'Organization',
+         'handler' => 'organizationSetup',
+      ),
+      '4' => array(
+         'label'   => 'Resources',
+         'handler' => 'resourceSetup',
+      ),
+      '5' => array(
+         'label'   => 'Create Admin User',
+         'handler' => 'adminSetup',
+      ),
+      '6' => array(
+         'label'   => 'Hierarchy',
+         'handler' => 'hierarchySetup',
+      ),
+      'q' => array (
+         'label'   => 'Quit',
+         'handler' => 'quit',
+      ),
+   );
+
+   presentMenu("Select a category below", $menu);
+
+}//mainMenu
+
+// ----------------------------------------------------------
+
+function generalSetup()
+{
+   clearScreen();
+
+   global $portal_settings;
+
+   sectionHeader("Please specify general settings below", false);
+
+   echo <<<"EOT"
+The default XDMoD configuration creates an Apache virtual host on port 8080.
+If you change or remove the port number (and use port 80) you will need to
+change the Apache configuration as well.
+
+
+EOT;
+
+   $portal_settings['general_site_address'] = prompt(
+      'Site Address:',
+      $portal_settings['general_site_address']
+   );
+
+   if (substr($portal_settings['general_site_address'], -1) != '/') {
+      $portal_settings['general_site_address'] .= '/';
+   }
+
+   echo <<<"EOT"
+
+The e-mail address you specify will be used as the destination for any
+messages sent via the portal contact page as well as account requests.  In
+addition, any log messages configured for delivery via e-mail will be sent to
+this address.
+
+
+EOT;
+
+   $portal_settings['general_contact_page_recipient'] = prompt(
+      'E-Mail Address:',
+      $portal_settings['general_contact_page_recipient']
+   );
+
+   // Copy the email address.
+   $portal_settings['general_tech_support_recipient']
+      = $portal_settings['general_debug_recipient']
+      = $portal_settings['mailer_sender_email']
+      = $portal_settings['logger_email_from']
+      = $portal_settings['logger_email_to']
+      = $portal_settings['general_contact_page_recipient'];
+
+   echo <<<"EOT"
+
+Java and PhantomJS are required by the report generator for constructing
+reports.  Setup will attempt to detect the presence of java, javac, and
+phantomjs on your system.
+
+
+EOT;
+
+   if ($portal_settings['reporting_java_path'] == '') {
+      $portal_settings['reporting_java_path']
+         = exec('which java 2>/dev/null');
+   }
+
+   if ($portal_settings['reporting_javac_path'] == '') {
+      $portal_settings['reporting_javac_path']
+         = exec('which javac 2>/dev/null');
+   }
+
+   if ($portal_settings['reporting_phantomjs_path'] == '') {
+      $portal_settings['reporting_phantomjs_path']
+         = exec('which phantomjs 2>/dev/null');
+   }
+
+   $portal_settings['reporting_java_path']
+      = prompt('Java Path:', $portal_settings['reporting_java_path']);
+
+   $portal_settings['reporting_javac_path']
+      = prompt('Javac Path:', $portal_settings['reporting_javac_path']);
+
+   $portal_settings['reporting_phantomjs_path'] = prompt(
+      'PhantomJS Path:',
+      $portal_settings['reporting_phantomjs_path']
+   );
+
+   echo <<<"EOT"
+
+You have the ability to specify a logo which will appear on the upper-right
+hand region of the portal.  You can specify an absolute or relative path for
+this logo.  It is advised that the height of the logo be at most 32 pixels.
+
+
+EOT;
+
+   $portal_settings['general_center_logo'] = prompt(
+      'Center Logo Path:',
+      $portal_settings['general_center_logo']
+   );
+
+   if (!empty($portal_settings['general_center_logo'])) {
+      $portal_settings['general_center_logo_width'] = prompt(
+         'Center Logo Width:',
+         $portal_settings['general_center_logo_width']
+      );
+   }
+
+   buildPortalSettingsFile();
+
+}//generalSetup
+
+// ----------------------------------------------------------
+
+function databaseSetup()
+{
+   if (sectionDatabaseSetup()) {
+      buildPortalSettingsFile();
+   } else {
+      echo "\nSettings file not saved!\n\n";
+      prompt('Press ENTER to continue');
+      mainMenu();
+   }
+
+}//databaseSetup
+
+// ----------------------------------------------------------
+
+function sectionDatabaseSetup()
+{
+   global $portal_settings;
+
+   sectionHeader("Please specify the database settings below");
+
+   echo <<<"EOT"
+Please provide the information required to connect to your MySQL database
+server.  A user will be created using the username and password you provide.
+
+
+EOT;
+
+   $portal_settings['db_host'] = prompt('DB Hostname or IP:', 'localhost');
+   $portal_settings['db_port'] = prompt('DB Port:', '3306');
+   $portal_settings['db_username'] = prompt('DB Username:', 'xdmod');
+   $portal_settings['db_password'] = silentPrompt('DB Password:');
+
+   echo <<<"EOT"
+
+
+Please provide the password for the administrative account that will be used
+to create the MySQL user and databases.
+
+
+EOT;
+
+   $admin_db_username = prompt('DB Admin Username:', 'root');
+   $admin_db_password = silentPrompt('DB Admin Password:');
+
+   try {
+      createDatabases(
+         $admin_db_username,
+         $admin_db_password,
+         $portal_settings
+      );
+   } catch (Exception $e) {
+      echo "\nFailed to create databases: " . $e->getMessage() . "\n";
+      return false;
+   }
+
+   // Copy DB info to each section.
+   $db_sections = array(
+      'logger',
+      'database',
+      'datawarehouse',
+      'shredder',
+      'hpcdb',
+   );
+
+   foreach ($db_sections as $section) {
+      $portal_settings[$section . '_host'] = $portal_settings['db_host'];
+      $portal_settings[$section . '_port'] = $portal_settings['db_port'];
+      $portal_settings[$section . '_user'] = $portal_settings['db_username'];
+      $portal_settings[$section . '_pass'] = $portal_settings['db_password'];
+   }
+
+   return true;
+
+}//sectionDatabaseSetup
+
+// ----------------------------------------------------------
+
+function organizationSetup()
+{
+   global $files;
+
+   $org = loadJsonFile($files['organization']);
+
+   clearScreen();
+
+   sectionHeader('Organization', false);
+
+   $org['name']   = prompt('Organization Name:', $org['name']);
+
+   $org['abbrev'] = prompt('Organization Abbreviation:', $org['abbrev']);
+
+   saveJsonConfigFile($files['organization'], $org);
+
+   prompt("Organization settings saved.\n\nPress ENTER to continue");
+
+   mainMenu();
+
+}//organizationSetup
+
+// ----------------------------------------------------------
+
+function resourceSetup()
+{
+   global $resource_settings;
+
+   $num_resources = count($resource_settings);
+
+   if ($num_resources > 0) {
+      clearScreen();
+
+      $menu = array(
+         '1' => array(
+            'label'   => 'Add a new resource',
+            'handler' => 'addResource'
+         ),
+      );
+
+
+      if ($num_resources > 0) {
+         $menu['2'] = array(
+            'label'   => "List entered resources ($num_resources)",
+            'handler' => 'listResources'
+         );
+
+         $menu['s'] = array(
+            'label'   => 'Save (and return to the main menu)',
+            'handler' => 'saveResources'
+         );
+      }
+
+      presentMenu("Resource Setup", $menu);
+   } else {
+      addResource();
+   }
+
+   resourceSetup();
+
+}//resourceSetup
+
+// ----------------------------------------------------------
+
+function addResource()
+{
+   clearScreen();
+
+   sectionHeader("Add A New Resource", false);
+
+   global $resource_settings;
+
+   echo <<<"EOT"
+The resource name you enter should match the name used by your resource
+manager.  This is the resource name that you will need to specify during the
+shredding process.  If you are using Slurm this must match the cluster name
+used by Slurm.
+
+
+EOT;
+
+   $resource = prompt('Resource Name:');
+   $name = prompt('Formal Name:');
+
+   echo <<<"EOT"
+
+The number of nodes and processors are used to determine resource utilization.
+
+
+EOT;
+
+   $nodes = prompt('How many nodes does this resource have?');
+   if (empty($nodes) || !is_numeric($nodes)) { $nodes = 1; }
+
+   $cpus = prompt('How many total processors (cpu cores) does this resource have?');
+   if (empty($cpus) || !is_numeric($cpus)) { $cpus = 1; }
+
+   $ppn = $cpus / $nodes;
+
+   $resource_settings[] = array(
+      'resource'         => $resource,
+      'resource_type_id' => 1,
+      'name'             => $name,
+      'processors'       => (int)$cpus,
+      'nodes'            => (int)$nodes,
+      'ppn'              => (int)$ppn,
+   );
+
+}//addResource
+
+// ----------------------------------------------------------
+
+function listResources()
+{
+   clearScreen();
+
+   sectionHeader("Resources Added", false);
+
+   global $resource_settings;
+
+   foreach ($resource_settings as $resource) {
+
+      echo "Resource:    " . $resource['resource']."\n";
+      echo "Name:        " . $resource['name']."\n";
+      echo "Processors:  " . $resource['processors']."\n";
+      echo "Nodes:       " . $resource['nodes']."\n";
+      echo "PPN:         " . $resource['ppn']."\n";
+
+      echo "------------------------------------------------\n\n";
+
+   }//foreach ($resource_settings as $resource)
+
+   prompt('Press ENTER to continue');
+
+}//listResources
+
+// ----------------------------------------------------------
+
+function saveResources()
+{
+   global $resource_settings;
+   global $files;
+
+   saveJsonConfigFile($files['resources'], $resource_settings);
+
+   prompt("Resource settings saved.\n\nPress ENTER to continue");
+
+   mainMenu();
+
+}//saveResources
+
+// ----------------------------------------------------------
+
+function adminSetup()
+{
+   clearScreen();
+
+   sectionHeader('Create Admin User', false);
+
+   echo <<<"EOT"
+Enter the data needed to create an admin user:
+
+
+EOT;
+
+   $username     = prompt('Username:');
+   $password     = silentPrompt('Password:');
+   $firstName    = prompt('First name:');
+   $lastName     = prompt('Last name:');
+   $emailAddress = prompt('Email address:');
+
+   try {
+      $user = new XDUser(
+         $username,
+         $password,
+         $emailAddress,
+         $firstName,
+         '', // Middle name.
+         $lastName,
+         array(ROLE_ID_MANAGER),
+         ROLE_ID_MANAGER
+      );
+      $user->setUserType(2); // Internal user.
+      $user->saveUser();
+   } catch (Exception $e) {
+      echo "\nFailed to create admin user: " . $e->getMessage();
+      prompt("\n\nPress ENTER to continue");
+      mainMenu();
+      return;
+   }
+
+   prompt("Admin user created.\n\nPress ENTER to continue");
+
+   mainMenu();
+
+}//adminSetup
+
+// ----------------------------------------------------------
+
+function hierarchySetup()
+{
+   global $files;
+
+   $hierarchy = loadJsonFile($files['hierarchy']);
+
+   clearScreen();
+
+   sectionHeader("Hierarchy", false);
+
+   echo <<<"EOT"
+Specify the levels (top, middle, and bottom) in your organization which would
+be analogous to the following structure:
+
+Top Level: NSF Directorate
+Middle Level: Parent Science
+Bottom Level: Field of Science
+
+
+EOT;
+
+   $items = array(
+      'top_level_label'    => 'Top Level Name:',
+      'top_level_info'     => 'Top Level Description:',
+      'middle_level_label' => 'Middle Level Name:',
+      'middle_level_info'  => 'Middle Level Description:',
+      'bottom_level_label' => 'Bottom Level Name:',
+      'bottom_level_info'  => 'Bottom Level Description:',
+   );
+
+   foreach ($items as $key => $prompt) {
+      $hierarchy[$key] = prompt($prompt, $hierarchy[$key]);
+   }
+
+   saveJsonConfigFile($files['hierarchy'], $hierarchy);
+
+   prompt("Hierarchy settings saved.\n\nPress ENTER to continue");
+
+   mainMenu();
+
+}//hierarchySetup
+
+// ----------------------------------------------------------
+
+function createDatabases($username, $password, array $settings)
+{
+   $databases = array(
+      'mod_shredder',
+      'mod_hpcdb',
+      'moddb',
+      'modw',
+      'modw_aggregates',
+      'mod_logger',
+   );
+
+   echo "\n\n";
+
+   foreach ($databases as $database) {
+      if (mysqlCheckExistsDb($username, $password, $settings, $database)) {
+         echo "\nDatabase '$database' already exists.\n";
+         $drop = prompt(
+            'Drop and recreate database?',
+            'no',
+            array('yes', 'no')
+         );
+         if ($drop == 'yes') {
+            echo "Dropping database '$database'\n";
+            mysqlDropDb($username, $password, $settings, $database);
+         } else {
+            continue;
+         }
+      }
+
+      echo "Creating database '$database'\n";
+      $sql = "CREATE DATABASE $database";
+      mysqlExecute($username, $password, $settings, '', $sql);
+
+      echo "Granting privileges on database '$database'\n";
+      $sql = "GRANT ALL ON $database.* TO"
+         . " '{$settings['db_username']}'@'{$settings['db_host']}'"
+         . " IDENTIFIED BY '{$settings['db_password']}'";
+      mysqlExecute($username, $password, $settings, '', $sql);
+
+      echo "Initializing database '$database'\n";
+      mysqlImportData($settings, $database);
+   }
+}
+
+// ----------------------------------------------------------
+
+function mysqlCheckExistsDb($username, $password, array $settings, $db)
+{
+   $sql = "SELECT SCHEMA_NAME FROM information_schema.SCHEMATA"
+      . " WHERE SCHEMA_NAME = '$db'";
+
+   $cmd = 'mysql -ss'
+      . ' -h ' . escapeshellarg($settings['db_host'])
+      . ' -P ' . escapeshellarg($settings['db_port'])
+      . ' -u ' . escapeshellarg($username);
+
+   if ($password !== '') {
+      # No space between "-p" and the password.
+      $cmd .= ' -p' . escapeshellarg($password);
+   }
+
+   $cmd .= ' -e ' . escapeshellarg($sql);
+
+   $output = executeCommand($cmd);
+
+   if (count($output) == 0) {
+      return false;
+   } elseif (count($output) == 1 && $output[0] == $db) {
+      return true;
+   } else {
+      $msg = 'Failed to check for existence of database: '
+         . implode("\n", $output);
+      throw new Exception($msg);
+   }
+}
+
+// ----------------------------------------------------------
+
+function mysqlDropDb($username, $password, array $settings, $db)
+{
+   $sql = "DROP DATABASE $db";
+
+   $cmd = 'mysql'
+      . ' -h ' . escapeshellarg($settings['db_host'])
+      . ' -P ' . escapeshellarg($settings['db_port'])
+      . ' -u ' . escapeshellarg($username);
+
+   if ($password !== '') {
+      # No space between "-p" and the password.
+      $cmd .= ' -p' . escapeshellarg($password);
+   }
+
+   $cmd .= ' -e ' . escapeshellarg($sql);
+
+   $output = executeCommand($cmd);
+
+   if (count($output) > 0) {
+      throw new Exception(implode("\n", $output));
+   }
+}
+
+// ----------------------------------------------------------
+
+function mysqlExecute($username, $password, array $settings, $db, $statement)
+{
+   $cmd = 'mysql'
+      . ' -h ' . escapeshellarg($settings['db_host'])
+      . ' -P ' . escapeshellarg($settings['db_port'])
+      . ' -u ' . escapeshellarg($username);
+
+   if ($password !== '') {
+      # No space between "-p" and the password.
+      $cmd .= ' -p' . escapeshellarg($password);
+   }
+
+   if ($db !== '') {
+      $cmd .= ' ' . escapeshellarg($db);
+   }
+
+   $cmd .= ' -e ' . escapeshellarg($statement);
+
+   $output = executeCommand($cmd);
+
+   if (count($output) > 0) {
+      throw new Exception(implode("\n", $output));
+   }
+}
+
+// ----------------------------------------------------------
+
+function mysqlImportData(array $settings, $db)
+{
+   $cmd = 'mysql'
+      . ' -h ' . escapeshellarg($settings['db_host'])
+      . ' -P ' . escapeshellarg($settings['db_port'])
+      . ' -u ' . escapeshellarg($settings['db_username']);
+
+   if ($settings['db_password'] !== '') {
+      # No space between "-p" and the password.
+      $cmd .= ' -p' . escapeshellarg($settings['db_password']);
+   }
+
+   $cmd .= ' ' . escapeshellarg($db) . ' < '
+      . escapeshellarg(BASE_DIR . "/ddl/$db.sql");
+
+   $output = executeCommand($cmd);
+
+   if (count($output) > 0) {
+      throw new Exception(implode("\n", $output));
+   }
+}
+
+// ----------------------------------------------------------
+
+function executeCommand($cmd)
+{
+   $output = array();
+
+   exec("$cmd 2>&1", $output, $return_var);
+
+   if ($return_var != 0) {
+      $msg = "Command returned non-zero value '$return_var': "
+         . implode("\n", $output);
+      throw new Exception($msg);
+   }
+
+   return $output;
+}
+
+// ----------------------------------------------------------
+
+function buildPortalSettingsFile()
+{
+   global $portal_settings;
+   global $files;
+
+   $template_content = file_get_contents($files['portal_settings_template']);
+
+   foreach ($portal_settings as $param => $value) {
+
+      $template_content = preg_replace("/\[:$param:\]/", $value, $template_content);
+
+   }//foreach
+
+   saveIniConfigFile($files['portal_settings'], $template_content);
+   xd_utilities\clearConfigurationCache();
+
+   prompt("Settings saved.\n\nPress ENTER to continue");
+   mainMenu();
+
+}//buildPortalSettingsFile
+
+// ----------------------------------------------------------
+
+function presentMenu($sectionHeaderText, &$menu, $msg = '')
+{
+   if (!empty($msg)) {
+      clearScreen();
+   }
+
+   sectionHeader($sectionHeaderText, false);
+
+   if (!empty($msg)) {
+      echo $msg."\n\n";
+   }
+
+   $trigger_set = array();
+
+   foreach ($menu as $trigger => $opts) {
+      echo "$trigger) {$opts['label']}\n";
+      $trigger_set[] = $trigger;
+   }//foreach
+
+   echo "\n";
+
+   $option = prompt('Select an option:' , '', $trigger_set);
+
+   $menu[$option]['handler']();
+
+}//presentMenu
+
+// ----------------------------------------------------------
+
+function sectionHeader($headerText, $pad = true)
+{
+   if ($pad == true) echo "\n\n";
+
+   echo "================================================\n";
+   echo $headerText."\n";
+   echo "================================================\n\n";
+
+}//sectionHeader
+
+// ----------------------------------------------------------
+
+function prompt($query, $default = '', array $options = array())
+{
+   $prompt = $query;
+
+   if (count($options) > 0) {
+      if ($default != '' && !in_array(strtolower($default), $options)) {
+         throw new Exception('Default value is not an option');
+      }
+
+      $lastChar = substr($prompt, -1, 1);
+
+      if (in_array($lastChar, array(':', '?'))) {
+         $prompt = substr($prompt, 0, strlen($prompt) - 1);
+      }
+
+      $prompt .= ' (' . implode(', ', $options) . ')';
+
+      if (in_array($lastChar, array(':', '?'))) {
+         $prompt .= $lastChar;
+      }
+   }
+
+   if (!empty($default)) {
+      $prompt .= " [$default]";
+   }
+
+   $prompt .= ' ';
+
+   $response = readline($prompt);
+
+   if (!empty($default) && $response === '') {
+      return $default;
+   }
+
+   if (count($options) > 0) {
+      $response = strtolower($response);
+      if (!in_array($response, $options)) {
+         echo "\n'$response' is not a valid option.\n\n";
+         return prompt($query, $default, $options);
+      }
+   }
+
+   return $response;
+
+}//prompt
+
+// ----------------------------------------------------------
+
+function silentPrompt($prompt)
+{
+   echo "$prompt ";
+   $first = preg_replace('/\r?\n$/', '', `stty -echo; head -n1; stty echo`);
+   echo "\n(confirm) $prompt ";
+   $second = preg_replace('/\r?\n$/', '', `stty -echo; head -n1; stty echo`);
+   echo "\n";
+
+   if ($first != $second) {
+      echo "\nEntries did not match, please enter again.\n\n";
+      return silentPrompt($prompt);
+   }
+
+   return $first;
+
+}//silentPrompt
+
+// ----------------------------------------------------------
+
+function loadJsonFile($file)
+{
+   $contents = file_get_contents($file);
+
+   if ($contents === false) {
+      return array();
+   }
+
+   $data = json_decode($contents, true);
+
+   if ($data === null) {
+      return array();
+   }
+
+   if (isset($data['meta'])) {
+      unset($data['meta']);
+   }
+
+   return $data;
+}
+
+// ----------------------------------------------------------
+
+function loadPortalSettings()
+{
+   $sections = array(
+      'general',
+      'mailer',
+      'reporting',
+      'logger',
+      'database',
+      'datawarehouse',
+      'shredder',
+      'hpcdb',
+   );
+
+   $settings = array();
+
+   foreach ($sections as $section) {
+      $options = xd_utilities\getConfigurationSection($section);
+      foreach ($options as $option => $value) {
+          $settings[$section . '_' . $option] = $value;
+      }
+   }
+
+   return $settings;
+}
+
+// ----------------------------------------------------------
+// @param string $file The config file path.
+// @param string $contents The config file contents.
+// ----------------------------------------------------------
+
+function saveIniConfigFile($file, $contents)
+{
+   preg_replace('/^;\s*META:.*$/m', '', $contents);
+
+   $contents .= "\n\n; META: " . json_encode(getMetaData()) . "\n";
+
+   saveConfigFile($file, $contents);
+
+}//saveIniConfigFile
+
+// ----------------------------------------------------------
+// @param string $file The config file path.
+// @param array $contents The config file contents.
+// ----------------------------------------------------------
+
+function saveJsonConfigFile($file, $contents)
+{
+   $contents['meta'] = getMetaData();
+
+   saveConfigFile($file, prettyPrint(json_encode($contents)) . "\n");
+
+}//saveJsonConfigFile
+
+// ----------------------------------------------------------
+// @param string $file The config file path.
+// @param string $contents The config file contents.
+// ----------------------------------------------------------
+
+function saveConfigFile($file, $contents)
+{
+   echo "\n";
+
+   // Save backup of current config file.
+   $backupFile = $file . date('-Y-m-d-His');
+   echo "Creating backup of current configuration '$backupFile'\n\n";
+
+   if (!is_file($file)) {
+      fwrite(STDERR, "Config file does not exist, no backup created.\n");
+   } elseif (!copy($file, $backupFile)) {
+      fwrite(STDERR, "Failed to create config file backup.\n");
+      exit(1);
+   }
+
+   echo "Writing configuration to '$file'\n\n";
+
+   if (file_put_contents($file, $contents) === false) {
+      fwrite(STDERR, "Failed to create config file.\n");
+      exit(1);
+   }
+
+}//saveConfigFile
+
+// -----------------------------------------------------------
+
+function getMetaData()
+{
+   return array(
+      'created_by'       => __FILE__,
+      'created_datetime' => date('Y-m-d\TH:i:s'),
+   );
+}
+
+// -----------------------------------------------------------
+
+function clearScreen()
+{
+   system('clear');
+}
+
+// -----------------------------------------------------------
+
+function quit()
+{
+   exit;
+
+}//quit
+
+// ===========================================================
+// prettyPrint
+// From: http://www.daveperrett.com/articles/2008/03/11/format-json-with-php/
+// ===========================================================
+
+function prettyPrint($json)
+{
+    $result      = '';
+    $pos         = 0;
+    $strLen      = strlen($json);
+    $indentStr   = '  ';
+    $newLine     = "\n";
+    $prevChar    = '';
+    $outOfQuotes = true;
+
+    for ($i=0; $i<=$strLen; $i++) {
+
+        // Grab the next character in the string.
+        $char = substr($json, $i, 1);
+
+        // Are we inside a quoted string?
+        if ($char == '"' && $prevChar != '\\') {
+            $outOfQuotes = !$outOfQuotes;
+
+        // If this character is the end of an element,
+        // output a new line and indent the next line.
+        } else if(($char == '}' || $char == ']') && $outOfQuotes) {
+            $result .= $newLine;
+            $pos --;
+            for ($j=0; $j<$pos; $j++) {
+                $result .= $indentStr;
+            }
+        }
+
+        // Add the character to the result string.
+        $result .= $char;
+
+        // If the last character was the beginning of an element,
+        // output a new line and indent the next line.
+        if (($char == ',' || $char == '{' || $char == '[') && $outOfQuotes) {
+            $result .= $newLine;
+            if ($char == '{' || $char == '[') {
+                $pos ++;
+            }
+
+            for ($j = 0; $j < $pos; $j++) {
+                $result .= $indentStr;
+            }
+        }
+
+        $prevChar = $char;
+    }
+
+    return $result;
+
+}//prettyPrint
+

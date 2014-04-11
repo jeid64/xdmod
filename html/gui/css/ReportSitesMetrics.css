@@ -1,0 +1,89 @@
+.complete .x-tree-node-anchor span {
+	color: #00f;
+}
+    
+.report_generation_field {
+	font-size: 11px !important;
+	width: 80px;
+	padding-left: 4px;
+}
+
+.report_generator_section_settings {
+	width: 250px !important;
+	padding-right: 20px;
+}
+
+.report_generator_generation_settings {
+	font-size: 14px;
+	padding-left: 11px;
+	margin-bottom: 8px;
+}
+
+.report_generation_cmb_frequency {
+	margin-bottom: 7px;
+}
+
+.report_generator_date_field {
+	width: 123px !important;
+	margin-bottom: 6px;
+}
+
+.report_generator_generation_settings .x-btn-group-header {
+	color: #000;
+	text-align: left !important;
+}
+
+.report_generator_btn_schedule {
+	margin-left: 87px;
+}
+
+.report_generator_cmb {
+	margin-bottom: 6px;
+}
+
+.report_generator_txtfield {
+	margin-top: 8px;
+	margin-bottom: 8px;
+}
+
+.metrics_panel {
+	padding-right: 6px;
+}
+
+/* Tree Panel Node Icon Customizations */
+
+.smart_tree {
+	padding-right: 0px;
+}
+
+.smart_tree .metric_parent {
+    background-image: url('../images/metric_parent.png');
+}
+
+.smart_tree .metric_parent_mixed {
+    background-image: url('../images/metric_parent_mixed.png');
+}
+
+.smart_tree .metric_child {
+    background-image: url('../images/metric_child.png');
+}
+
+.smart_tree .site_parent {
+    background-image: url('../images/site_parent.png');
+}
+
+.smart_tree .site_parent_mixed {
+    background-image: url('../images/site_parent_mixed.png');
+}
+
+.smart_tree .site_child {
+    background-image: url('../images/site_child.png');
+}  
+
+
+.smart_tree input.x-tree-node-cb {
+	height: 19px;
+	margin-left: 5px;
+	margin-right: 3px;
+	vertical-align: center;
+}

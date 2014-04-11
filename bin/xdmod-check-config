@@ -1,0 +1,229 @@
+#!/usr/bin/php
+<?php
+/**
+ * Check for XDMoD prerequisites.
+ */
+
+require_once __DIR__ . '/../configuration/linker.php';
+
+$opts = array(
+   'h' => 'help',
+   'd' => 'debug',
+);
+
+$shortOptions = implode('', array_keys($opts));
+$longOptions  = array_values($opts);
+
+$args = getopt($shortOptions, $longOptions);
+
+if ($args === false) {
+   _error("Failed to parse arguments");
+   exit(1);
+}
+
+$help = $debug = false;
+
+foreach ($args as $key => $value) {
+   switch ($key) {
+      case 'h':
+      case 'help':
+         $help = true;
+         break;
+      case 'd':
+      case 'debug':
+         $debug = true;
+         break;
+   }
+}
+
+if ($help) {
+   displayHelpText();
+   exit;
+}
+
+try {
+   $version = xd_utilities\getConfiguration('general', 'version');
+
+   echo "XDMoD $version\n\n";
+
+   echo "Required prerequisites\n\n";
+
+   _debug('Checking PHP version');
+   $requiredVersion = '5.3.0';
+   $currentVersion  = phpversion();
+   $result = strcmp($currentVersion, $requiredVersion) >= 0;
+   displayResult(
+      $result,
+      "PHP version must be at least $requiredVersion",
+      "You have PHP version $currentVersion.  Upgrade to $requiredVersion"
+      . " or greater"
+   );
+
+   _debug('Checking for PDO');
+   $result = class_exists('PDO');
+   displayResult(
+      $result,
+      "PHP Data Objects (PDO) extension installed",
+      "You must install the PHP PDO extensions."
+   );
+
+   _debug('Checking for MySQL PDO driver');
+   $result = false;
+   if (class_exists('PDO')) {
+      $drivers = PDO::getAvailableDrivers();
+      $result = in_array('mysql', $drivers);
+   }
+   displayResult(
+      $result,
+      "MySQL PDO driver installed",
+      "You must install the MySQL PDO dirver"
+   );
+
+   # TODO: Check for MySQL (mysql) command.
+   # TODO: Connect to database
+   # TODO: Try command line (LOAD IN FILE)?
+   #_debug('Checking MySQL Server');
+   #displayResult(
+   #   $result,
+   #   ""
+   #);
+
+   _debug('Checking timezone');
+   $tz = ini_get('date.timezone');
+   $result = $tz !== null && $tz !== false;
+   displayResult(
+      $result,
+      "Timezone set",
+      "Set date.timezone in your php.ini"
+   );
+
+   # TODO: Check that the timezone is valid.
+
+   _debug('Checking for JSON functions');
+   $result = function_exists('json_encode');
+   displayResult(
+      $result,
+      "JSON extension installed"
+   );
+
+   _debug('Checking session functions');
+   $result = function_exists('session_start');
+   displayResult(
+      $result,
+      "Session support installed"
+   );
+
+   _debug('Checking for PCRE extension');
+   $result = function_exists('preg_match');
+   displayResult(
+      $result,
+      "PCRE extension installed"
+   );
+
+   /*
+   # log folder
+   _debug('Checking folder permissions');
+   displayResult(
+      $result,
+      ""
+   );
+
+   # Check for PEAR Log
+   _debug('Checking PEAR Log');
+   displayResult(
+      $result,
+      ""
+   );
+
+   # mod_rewrite (?)
+   _debug('Checking Apache');
+   displayResult(
+      $result,
+      ""
+   );
+
+   # Java
+   # Check for PhantomJS
+
+   _debug('Checking for recommended prerequisites');
+   displayResult(
+      $result,
+      ""
+   );
+
+   _debug('Checking PHP-XML');
+   displayResult(
+      $result,
+      ""
+   );
+
+   _debug('Checking PHP-LDAP');
+   displayResult(
+      $result,
+      ""
+   );
+    */
+
+} catch (Exception $e) {
+   _error($e->getMessage() . "\n\n" . $e->getTraceAsString());
+   exit(1);
+}
+
+exit;
+
+/**
+ * Display the help text.
+ */
+function displayHelpText()
+{
+   echo <<<'EOF'
+
+Usage: xdmod-check-config [-h] [-d]
+
+   -h, --help
+      Display this message and exit.
+
+   -d, --debug
+      Output debugging messages.
+
+EOF;
+}
+
+/**
+ * @param bool $result
+ * @param string $message
+ */
+function displayResult($result, $message, $instructions = null)
+{
+   if ($result) {
+      echo " OK      $message\n";
+   } else {
+      echo " NOT OK   $message\n";
+      if ($instructions !== null) {
+         echo "\n$instructions\n\n";
+      }
+   }
+}
+
+/**
+ * Output a debugging message if the debug option was specified.
+ */
+function _debug($text)
+{
+   global $debug;
+
+   if (!$debug) {
+      return;
+   }
+
+   fwrite(STDERR, "DEBUG: $text\n");
+}
+
+/**
+ * Output an error message.
+ */
+function _error($text)
+{
+   fwrite(STDERR, "ERROR: $text\n");
+}
+
