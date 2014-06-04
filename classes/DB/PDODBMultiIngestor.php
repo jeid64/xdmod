@@ -69,13 +69,13 @@ class PDODBMultiIngestor implements Ingestor
         $this->_logger->debug('Source query: ' . $this->_source_query);
         $message        = get_class($this) . ': Querying...';
         $message_length = strlen($message);
-        print ($message);
+        $this->_logger->notice($message);
         $srcStatement = $this->_source_db->handle()->prepare($this->_source_query);
         $srcStatement->execute();
 
-        print(str_repeat(chr(8), $message_length));
-        print(str_repeat(' ', $message_length));
-        print(str_repeat(chr(8), $message_length));
+        $this->_logger->notice(str_repeat(chr(8), $message_length));
+        $this->_logger->notice(str_repeat(' ', $message_length));
+        $this->_logger->notice(str_repeat(chr(8), $message_length));
 
         if ($this->_count_statement == null) {
             $rowsTotal = $srcStatement->rowCount();
@@ -101,7 +101,7 @@ class PDODBMultiIngestor implements Ingestor
         $infile_name = "/tmp/{$this->_insert_table}.data" . $this->_destination_db->_db_port;
 
         $f = fopen($infile_name, 'w');
-		
+
 		if($f === FALSE)
 		{
 			$infile_name = "/tmp/{$this->_insert_table}.data" . $this->_destination_db->_db_port.rand();
@@ -140,8 +140,8 @@ class PDODBMultiIngestor implements Ingestor
             {
                 $message = get_class($this) . ': Rows Written to File: ' . $sourceRows . ' of ' . $rowsTotal;
                 $message_length = strlen($message);
-                print ($message);
-                print (str_repeat(chr(8) , $message_length));
+                $this->_logger->notice($message);
+                $this->_logger->notice(str_repeat(chr(8) , $message_length));
             }
             if ($sourceRows !== 0  && $sourceRows % 250000 == 0 || $rowsTotal == $sourceRows)
             {
@@ -222,7 +222,7 @@ class PDODBMultiIngestor implements Ingestor
             $message.= implode("\n", $warnings) . "\n";
         }
         $message_length = strlen($message);
-        print ($message);
+        $this->_logger->notice($message);
 
         // NOTE: This is needed for the log summary.
         $this->_logger->notice(array(
